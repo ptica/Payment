@@ -16,7 +16,6 @@ class CSignature{
 	
 	function sign($text) {
 		$pkeyid = openssl_get_privatekey($this->privatni, $this->heslo);
-		debug($pkeyid);
 		openssl_sign($text, $signature, $pkeyid);
 		$signature = base64_encode($signature);
 		openssl_free_key($pkeyid);

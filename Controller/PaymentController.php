@@ -9,7 +9,82 @@ class PaymentController extends PaymentAppController {
 	// declare public actions
 	public function beforeFilter() {
 		parent::beforeFilter();
-		$this->Auth->allow('validation', 'confirmation', 'reject', 'ok', 'nok', 'prices', 'mail');
+		$this->Auth->allow('validation', 'confirmation', 'reject', 'ok', 'nok', 'prices', 'mail', 'pay');
+	}
+	
+	/*
+	 * payment via booking_id and token
+	 */
+	public function pay() {
+		// query string params
+		$booking_id = $this->request->query('id');
+		$token      = $this->request->query('token');
+		
+		// validate booking token versus id
+		$cnd = array(
+			'Booking.id'    => $booking_id,
+			'Booking.token' => $token
+		);
+
+		$booking = $this->Booking->find('first', array('conditions'=>$cnd));
+		if (!$booking) {
+			echo 'Payment not found.';
+			exit();
+		}
+		
+		// try to find existing Payment
+		$cnd = array(
+			'Payment.booking_id' => $booking_id,
+			'Payment.token' => $token
+		);
+
+		$payment = $this->Payment->find('first', array('conditions'=>$cnd));
+
+		if (@$payment['Payment']['status'] == 'confirmed ok') {
+			$this->Session->write('remembered_payment_id', $payment_id);
+			$this->redirect('/payment/ok');
+		} else {
+			// create new payment for gateway
+			$payment = array(
+				'booking_id'   => $booking_id,
+				'amountcents'  => 100 * $booking['Booking']['web_price'],
+				'currencycode' => Configure::read('gp.currency.code'),
+				'currency'     => Configure::read('gp.currency.ticker'),
+				'token'        => $token
+			);
+			
+			if ($this->Payment->save($payment)) {
+				$payment_id = $this->Payment->id;
+				
+				$params = array(
+					'MERCHANTNUMBER' => Configure::read('gp.merchantid'),
+					'OPERATION' => 'CREATE_ORDER',
+					'ORDERNUMBER' => $payment_id,
+					'AMOUNT' => $payment['amountcents'],
+					'CURRENCY' => Configure::read('gp.currency.code'),
+					'DEPOSITFLAG' => 1, // pozadovana okamzita uhrada
+					'URL' => Router::url('/payment/payment/result', $full=true)
+				);
+				
+				// TODO move signing into a event callback?
+				$private_key = Configure::read('gp.private_key');
+				$public_key  = Configure::read('gp.public_key');
+				$sign = new CSignature($private_key, Configure::read('gp.password'), $private_key);
+				$params_str = implode('|', array_values($params));
+				$digest = $sign->sign($params_str);
+				
+				$params['DIGEST'] = $digest;
+
+				// for view
+				$this->set(compact('payment_id', 'booking_id', 'params'));
+
+				// for nok page try again link
+				$this->Session->write('remembered_payment_id', $payment_id);
+			} else {
+				echo 'Internal error creating new payment. Please contact system administrator at jan.ptacek@gmail.com';
+				exit();
+			}
+		}
 	}
 
 	public function prices() {
@@ -200,81 +275,6 @@ class PaymentController extends PaymentAppController {
 		$view_vars = $this->get_receipt_data($payment);
 		$this->set($view_vars);
 		$this->render(Configure::read('Config.language').'/ok');
-	}
-
-	/*
-	 * payment via email link or via session
-	 */
-	public function index() {
-		if ($this->Session->check('remembered_payment_id')) {
-			$payment_id = $this->Session->read('remembered_payment_id');
-			$cnd = array(
-				'Payment.id' => $payment_id,
-			);
-		} else {
-			// query string params
-			$payment_id = $this->request->query('pay');
-			$token      = $this->request->query('token');
-			$cnd = array(
-				'Payment.id' => $payment_id,
-				'Payment.token' => $token
-			);
-		}
-
-		$payment = $this->Payment->find('first', array('conditions'=>$cnd));
-
-		if (!$payment) {
-			echo 'Payment not found.';
-			exit();
-		}
-
-		if ($payment['Payment']['status'] == 'confirmed ok') {
-			$this->Session->write('remembered_payment_id', $payment_id);
-			$this->redirect('/payment/ok');
-		} else {
-			$booking_id = $payment['Booking']['id'];
-
-			// create new payment for gateway
-			$payment = array(
-				'booking_id'   => $booking_id,
-				'amountcents'  => 100 * $payment['Booking']['web_price'],
-				'currencycode' => 203,
-				'currency'     => 'CZK',
-				'token' => uniqid()
-			);
-			
-			if ($this->Payment->save($payment)) {
-				$payment_id = $this->Payment->id;
-				
-				$params = array(
-					'MERCHANTNUMBER' => 9671935009,
-					'OPERATION' => 'CREATE_ORDER',
-					'ORDERNUMBER' => $payment_id,
-					'AMOUNT' => $payment['amountcents'],
-					'CURRENCY' => 203, //
-					'DEPOSITFLAG' => 1, // pozadovana okamzita uhrada
-					'URL' => 'http://localhost/marathon/payment/payment/', // sem poslou vysledek - redirectem z browseru zakaznika
-				);
-				
-				//
-				$private_key = APP . 'Config' . DS . 'gp' . DS . 'gpwebpay.pem';
-				$public_key  = APP . 'Config' . DS . 'gp' . DS . 'gpwebpay.cer';
-				$sign = new CSignature($private_key, 'MtM2015', $private_key);
-				$params_str = implode('|', array_values($params));
-				$digest = $sign->sign($params_str);
-				
-				$params['DIGEST'] = $digest;
-
-				// for view
-				$this->set(compact('payment_id', 'booking_id'));
-
-				// for nok page try again link
-				$this->Session->write('remembered_payment_id', $payment_id);
-			} else {
-				echo 'Internal error creating new payment. Please contact system administrator at jan.ptacek@gmail.com';
-				exit();
-			}
-		}
 	}
 
 	public function admin_index() {
