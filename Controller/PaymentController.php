@@ -411,7 +411,7 @@ class PaymentController extends PaymentAppController {
 		// do not use Config.language as it is called by csas on the .cz domain only
 		// use the persons locale!
 		$locale = $payment['Booking']['Person']['locale'];
-		$locale_language = explode('_', $locale)[0];
+		$locale_language = reset(explode('_', $locale));
 		$format_def = array(
 			'en_US' => 'D F d, Y \a\t H:i',
 			'en_GB' => 'D F d, Y \a\t H:i',
