@@ -63,17 +63,18 @@ class PaymentController extends PaymentAppController {
 					'AMOUNT' => $payment['amountcents'],
 					'CURRENCY' => Configure::read('gp.currency.code'),
 					'DEPOSITFLAG' => 1, // pozadovana okamzita uhrada
-					'URL' => Router::url('/payment/payment/result', $full=true)
+					'URL' => Router::url('/pay/result', $full=true)
 				);
 				
 				// TODO move signing into a event callback?
 				$private_key = Configure::read('gp.private_key');
 				$public_key  = Configure::read('gp.public_key');
-				$sign = new CSignature($private_key, Configure::read('gp.password'), $private_key);
+				$sign = new CSignature($private_key, Configure::read('gp.password'), $public_key);
 				$params_str = implode('|', array_values($params));
+				debug($params_str);
 				$digest = $sign->sign($params_str);
 				
-				$params['DIGEST'] = $digest;
+				$params['DIGEST'] = urlencode($digest);
 
 				// for view
 				$this->set(compact('payment_id', 'booking_id', 'params'));
