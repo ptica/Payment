@@ -15,10 +15,10 @@ class PaymentController extends PaymentAppController {
 	/*
 	 * payment via booking_id and token
 	 */
-	public function pay() {
+	public function pay($booking_id, $token) {
 		// query string params
-		$booking_id = $this->request->query('id');
-		$token      = $this->request->query('token');
+		//$booking_id = $this->request->query('id');
+		//$token      = $this->request->query('token');
 		
 		// validate booking token versus id
 		$cnd = array(
