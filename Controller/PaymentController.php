@@ -9,7 +9,7 @@ class PaymentController extends PaymentAppController {
 	// declare public actions
 	public function beforeFilter() {
 		parent::beforeFilter();
-		$this->Auth->allow('validation', 'confirmation', 'reject', 'ok', 'nok', 'prices', 'mail', 'pay');
+		$this->Auth->allow('validation', 'confirmation', 'reject', 'ok', 'nok', 'prices', 'mail', 'pay', 'result');
 	}
 	
 	/*
@@ -86,6 +86,15 @@ class PaymentController extends PaymentAppController {
 				exit();
 			}
 		}
+	}
+	
+	/*
+	 */
+	public function result() {
+		$data = $this->request->data;
+		CakeLog::write('info', "payment result called: [OK]");
+		echo 'OK';
+		exit();
 	}
 
 	public function prices() {
