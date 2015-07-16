@@ -60,7 +60,9 @@ class PaymentController extends PaymentAppController {
 					'MERCHANTNUMBER' => Configure::read('gp.merchantid'),
 					'OPERATION' => 'CREATE_ORDER',
 					'ORDERNUMBER' => $payment_id,
+					'ORDERNUMBER' => 49,
 					'AMOUNT' => $payment['amountcents'],
+					'AMOUNT' => 100,
 					'CURRENCY' => Configure::read('gp.currency.code'),
 					'DEPOSITFLAG' => 1, // pozadovana okamzita uhrada
 					'URL' => Router::url('/pay/result', $full=true)
@@ -74,10 +76,19 @@ class PaymentController extends PaymentAppController {
 				debug($params_str);
 				$digest = $sign->sign($params_str);
 				
-				$params['DIGEST'] = urlencode($digest);
+				$params['DIGEST'] = $digest;
+				
+				/* TRY: sign using https://github.com/sebik/webpay-php */
+				$request = new WebPayRequest();
+				$request->setPrivateKey($private_key, Configure::read('gp.password'));
+				$request->setWebPayUrl('https://test.3dsecure.gpwebpay.com/rb/order.do');
+				$request->setResponseUrl(Router::url('/pay/result', $full=true));
+				$request->setMerchantNumber(Configure::read('gp.merchantid'));
+				$request->setOrderInfo(49 /* webpay objednávka */, 49 /* interní objednávka */, 1 /* cena v CZK */);
+				$gp_url = $request->requestUrl();
 
 				// for view
-				$this->set(compact('payment_id', 'booking_id', 'params'));
+				$this->set(compact('payment_id', 'booking_id', 'params', 'gp_url'));
 
 				// for nok page try again link
 				$this->Session->write('remembered_payment_id', $payment_id);

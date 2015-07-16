@@ -18,4 +18,6 @@
 		?>
 		<input type="submit" value="TO PAYMENT">
 	</form>
+	
+	<a href="<?php echo $gp_url ?>">link to payment via GET</a>
 </div>

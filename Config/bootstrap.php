@@ -16,3 +16,9 @@ App::import(
     'Payment.CSignature',
     array('file' => 'GlobalPayments/signature.php')
 );
+
+App::import(
+    'Vendor',
+    'Payment.WebPayRequest',
+    array('file' => 'Sebik/webpay.php')
+);
