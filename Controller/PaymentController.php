@@ -60,7 +60,6 @@ class PaymentController extends PaymentAppController {
 					'MERCHANTNUMBER' => Configure::read('gp.merchantid'),
 					'OPERATION' => 'CREATE_ORDER',
 					'ORDERNUMBER' => $payment_id,
-					'ORDERNUMBER' => 49,
 					'AMOUNT' => $payment['amountcents'],
 					'AMOUNT' => 100,
 					'CURRENCY' => Configure::read('gp.currency.code'),
