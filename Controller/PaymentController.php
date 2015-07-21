@@ -61,7 +61,7 @@ class PaymentController extends PaymentAppController {
 					'OPERATION' => 'CREATE_ORDER',
 					'ORDERNUMBER' => $payment_id,
 					'AMOUNT' => $payment['amountcents'],
-					'AMOUNT' => 100,
+					//'AMOUNT' => 100,
 					'CURRENCY' => Configure::read('gp.currency.code'),
 					'DEPOSITFLAG' => 1, // pozadovana okamzita uhrada
 					'URL' => Router::url('/pay/result', $full=true)
@@ -72,7 +72,6 @@ class PaymentController extends PaymentAppController {
 				$public_key  = Configure::read('gp.public_key');
 				$sign = new CSignature($private_key, Configure::read('gp.password'), $public_key);
 				$params_str = implode('|', array_values($params));
-				debug($params_str);
 				$digest = $sign->sign($params_str);
 				
 				$params['DIGEST'] = $digest;
@@ -88,8 +87,16 @@ class PaymentController extends PaymentAppController {
 
 				// for view
 				$this->set('locations', $this->Booking->Room->Location->find('list'));
-				
 				$this->set(compact('booking', 'payment_id', 'booking_id', 'params', 'gp_url'));
+				$this->request->data = $booking;
+				$rooms = $this->Booking->Room->find('list');
+				$priceTypes = $this->Booking->PriceType->find('list');
+				$upsells = $this->Booking->Upsell->find('list');
+				$meals = $this->Booking->Meal->find('list');
+				$queries = $this->Booking->Query->find('list');
+				$locations = $this->Booking->Room->Location->find('list');
+				$location_desc = $this->Booking->Room->Location->find('list', array('fields'=>array('id', 'desc')));
+				$this->set(compact('rooms', 'priceTypes', 'upsells', 'meals', 'queries', 'locations', 'location_desc'));
 
 				// for nok page try again link
 				$this->Session->write('remembered_payment_id', $payment_id);
@@ -105,7 +112,6 @@ class PaymentController extends PaymentAppController {
 	 */
 	public function result() {
 		$params = $this->request->query;
-		debug($params);
 		
 		$gp_digest  = $params['DIGEST'];
 		$gp_digest1 = $params['DIGEST1'];
