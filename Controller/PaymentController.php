@@ -9,7 +9,7 @@ class PaymentController extends PaymentAppController {
 	// declare public actions
 	public function beforeFilter() {
 		parent::beforeFilter();
-		$this->Auth->allow('validation', 'confirmation', 'reject', 'ok', 'nok', 'prices', 'mail', 'pay', 'result');
+		$this->Auth->allow('pay', 'result', 'ok', 'nok');
 	}
 	
 	/*
@@ -87,7 +87,9 @@ class PaymentController extends PaymentAppController {
 				$gp_url = $request->requestUrl();
 
 				// for view
-				$this->set(compact('payment_id', 'booking_id', 'params', 'gp_url'));
+				$this->set('locations', $this->Booking->Room->Location->find('list'));
+				
+				$this->set(compact('booking', 'payment_id', 'booking_id', 'params', 'gp_url'));
 
 				// for nok page try again link
 				$this->Session->write('remembered_payment_id', $payment_id);
@@ -99,149 +101,82 @@ class PaymentController extends PaymentAppController {
 	}
 	
 	/*
+	 * Recieve payment result from the gateway
 	 */
 	public function result() {
-		$data = $this->request->data;
-		CakeLog::write('info', "payment result called: [OK]");
-		echo 'OK';
-		exit();
-	}
-
-	public function prices() {
-		return Configure::read('csas.prices');
-	}
-
-	/*
-	 * VALIDATION POST
-	 * called by csas - to check data submitted to gw
-	 */
-	public function validation() {
-		$csas    = $this->request->data;
-		$payment = @$this->Payment->findById($csas['merchantref']);
-		if (!$payment) { echo 'Error: Payment id not found.'; exit(); }
-
-		if ($this->validation_check($csas, $payment)) {
-			$payment['Payment']['validation'] = date('Y-m-d H:i:s');
-			$payment['Payment']['status'] = 'validated ok';
-
-			if ($this->Payment->save($payment)) {
-				CakeLog::write('info', "csas validation of payment_id: $csas[merchantref]: [OK]");
-				echo '<html><head></head><body>[OK]</body></html>';
-				exit();
-			}
-		} else {
-			$payment['Payment']['validation'] = date('Y-m-d H:i:s');
-			$payment['Payment']['status'] = 'validation FAIL';
-			$this->Payment->save($payment);
+		$params = $this->request->query;
+		debug($params);
+		
+		$gp_digest  = $params['DIGEST'];
+		$gp_digest1 = $params['DIGEST1'];
+		unset($params['DIGEST']);
+		unset($params['DIGEST1']);
+		
+		$private_key = Configure::read('gp.private_key');
+		$public_key  = Configure::read('gp.muzo_key');
+		$sign = new CSignature($private_key, Configure::read('gp.password'), $public_key);
+		
+		// check digest
+		$params_str = implode('|', array_values($params));
+		$res_digest = $sign->verify($params_str, $gp_digest);
+		
+		// check digest1
+		$params['MERCHANTNUMBER'] = Configure::read('gp.merchantid');
+		$params_str = implode('|', array_values($params));
+		$res_digest1 = $sign->verify($params_str, $gp_digest1);
+		
+		
+		$payment_id = $params['ORDERNUMBER'];
+		CakeLog::write('info', "payment id: $payment_id");
+		
+		$payment = @$this->Payment->findById($payment_id);
+		if (!$payment) {
+			CakeLog::write('info', "payment id not found");
+			echo 'Error: Payment id not found.';
+			exit();
 		}
-		CakeLog::write('info', "csas validation of payment_id: $csas[merchantref]: [FAIL]");
-		echo '[FAIL]';
-		exit();
-	}
+		
+		if ($res_digest && $res_digest1) {
+			$pr_code    = $params['PRCODE'];
+			$sr_code    = $params['SRCODE'];
+			$msg        = $params['RESULTTEXT'];
 
-	private function validation_check($csas, $payment) {
-		$requirements = array(
-			'merchantid'   => Configure::read('csas.merchantid'),
-			'amountcents'  => $payment['Payment']['amountcents'],
-			'currencycode' => $payment['Payment']['currencycode'],
-			'password'     => Configure::read('csas.password'),
-			'exponent' => '2'
-		);
-		$diff = array_diff_assoc($requirements, $csas);
-		if (!$diff) {
-			return true;
-		}
-		CakeLog::write('info', '[OUR VALIDATION FAIL] missing items in csas data:' . var_export($diff, true));
-		return false;
-	}
-
-	/*
-	 * CONFIRMATION POST
-	 * called by csas - bank is ready to charge
-	 */
-	public function confirmation() {
-		$csas       = $this->request->data;
-		$payment_id = @$csas['merchantref'];
-		$payment    = @$this->Payment->findById($payment_id);
-		if (!$payment) { echo 'Error: Payment id not found.'; exit(); }
-
-		if ($this->confirmation_check($csas, $payment)) {
-			$payment['Payment']['confirmed'] = date('Y-m-d H:i:s');
-			$payment['Payment']['status'] = 'confirmed ok';
-
-			$booking = array(
-				'id' => $payment['Booking']['id'],
-				'status' => 'confirmed'
-			);
-
-			if ($this->Payment->save($payment) && $this->Booking->save($booking)) {
-				CakeLog::write('info', "csas confirmation of payment_id: $csas[merchantref]: [OK]");
-				echo '<html><head></head><body>[OK]</body></html>';
-
+			CakeLog::write('info', "payment result called: [OK_DIGEST]");
+			CakeLog::write('info', "payment PRCODE: [$pr_code] SRCODE: [$sr_code]");
+			
+			// saving payment with PRCODE & SRCODE
+			if ($pr_code == 0 && $sr_code == 0) {
+				$status = 'confirmed ok';
 				// send out emails
 				$this->send_new_booking($payment_id);
+			} else {
+				// TODO: redirect to nok page
+				$status = "PRCODE:$pr_code SRCODE:$sr_code";
+				echo "Payment gateway error message: " . $msg;
+			}
+			$payment['Payment']['confirmation'] = date('Y-m-d H:i:s');
+			$payment['Payment']['status'] = $status;
+			$payment['Payment']['status'] = $status;
+			$payment['Payment']['msg']    = $msg;
 
-				exit();
+			if ($this->Payment->save($payment)) {
+				CakeLog::write('info', "Payment  saved ok");
+			} else {
+				CakeLog::write('info', "problem saving the Payment");
+			}
+			
+			// View for user
+			if ($pr_code == 0 && $sr_code == 0) {
+				// send out emails
+				// TODO $this->send_new_booking($payment_id);
+			} else {
+				// TODO: redirect to nok page
 			}
 		} else {
-			$payment['Payment']['confirmation'] = date('Y-m-d H:i:s');
-			$payment['Payment']['status'] = 'confirmation FAIL';
-			$this->Payment->save($payment);
+			CakeLog::write('info', "payment result called: [WRONG_DIGEST]");
 		}
-		CakeLog::write('info', "csas confirmation of payment_id: $csas[merchantref]: [FAIL]");
-		echo '[FAIL]';
+		
 		exit();
-	}
-
-	private function confirmation_check($csas, $payment) {
-		$requirements = array(
-			'merchantid'   => Configure::read('csas.merchantid'),
-			'amountcents'  => $payment['Payment']['amountcents'],
-			'currencycode' => $payment['Payment']['currencycode'],
-			'password'     => Configure::read('csas.password'),
-		);
-		$diff = array_diff_assoc($requirements, $csas);
-		if (!$diff) {
-			return true;
-		}
-		CakeLog::write('info', '[OUR CONFIRMATION FAIL] missing items in csas data:' . var_export($diff, true));
-		return false;
-	}
-
-	/*
-	 * REJECTION POST
-	 * called by csas - payment rejected
-	 */
-	public function reject() {
-		$csas    = $this->request->data;
-		CakeLog::write('info', '[rejection] of payment_id: $csas[merchantref]: ' . var_export($csas, true));
-		$payment = @$this->Payment->findById($csas['merchantref']);
-		if (!$payment) { echo 'Error: Payment id not found.'; exit(); }
-
-		$payment['Payment']['rejection'] = date('Y-m-d H:i:s');
-		$payment['Payment']['error'] = $csas['errorcode'] . ':' . $csas['errorstring'];
-		$payment['Payment']['status'] = 'rejected';
-		$booking = array(
-			'id' => $payment['Booking']['id'],
-			'status' => 'rejected'
-		);
-		CakeLog::write('info', 'saving: ' . var_export($booking, true));
-
-		$this->Payment->save($payment);
-		$this->Booking->save($booking);
-
-		echo '<html><head></head><body>[OK]</body></html>';
-		exit();
-	}
-
-	private function domain_correction() {
-		$wanted_host  = $this->request->query('merchantvar1');
-		$current_host = $_SERVER['HTTP_HOST'];
-		if ($wanted_host && $wanted_host != $current_host) {
-			$this->set_request_scheme();
-			$url = $_SERVER['REQUEST_SCHEME'] . '://' . $wanted_host . $_SERVER['REQUEST_URI'];
-			$this->redirect($url, 303);
-		}
 	}
 
 	/*
@@ -297,66 +232,6 @@ class PaymentController extends PaymentAppController {
 		$this->render(Configure::read('Config.language').'/ok');
 	}
 
-	public function admin_index() {
-		$this->Payment->recursive = 0;
-		$this->set('payments', $this->Paginator->paginate());
-	}
-
-	public function admin_view($id = null) {
-		if (!$this->Payment->exists($id)) {
-			throw new NotFoundException(__('Invalid payment'));
-		}
-		$options = array('conditions' => array('Payment.' . $this->Payment->primaryKey => $id));
-		$this->set('payment', $this->Payment->find('first', $options));
-	}
-
-	public function admin_add() {
-		if ($this->request->is('post')) {
-			$this->Payment->create();
-			if ($this->Payment->save($this->request->data)) {
-				$this->Session->setFlash(__('The payment has been saved.'));
-				return $this->redirect(array('action' => 'index'));
-			} else {
-				$this->Session->setFlash(__('The payment could not be saved. Please, try again.'));
-			}
-		}
-		$bookings = $this->Payment->Booking->find('list');
-		$this->set(compact('bookings'));
-	}
-
-	public function admin_edit($id = null) {
-		if (!$this->Payment->exists($id)) {
-			throw new NotFoundException(__('Invalid payment'));
-		}
-		if ($this->request->is(array('post', 'put'))) {
-			if ($this->Payment->save($this->request->data)) {
-				$this->Session->setFlash(__('The payment has been saved.'));
-				return $this->redirect(array('action' => 'index'));
-			} else {
-				$this->Session->setFlash(__('The payment could not be saved. Please, try again.'));
-			}
-		} else {
-			$options = array('conditions' => array('Payment.' . $this->Payment->primaryKey => $id));
-			$this->request->data = $this->Payment->find('first', $options);
-		}
-		$bookings = $this->Payment->Booking->find('list');
-		$this->set(compact('bookings'));
-	}
-
-	public function admin_delete($id = null) {
-		$this->Payment->id = $id;
-		if (!$this->Payment->exists()) {
-			throw new NotFoundException(__('Invalid payment'));
-		}
-		$this->request->allowMethod('post', 'delete');
-		if ($this->Payment->delete()) {
-			$this->Session->setFlash(__('The payment has been deleted.'));
-		} else {
-			$this->Session->setFlash(__('The payment could not be deleted. Please, try again.'));
-		}
-		return $this->redirect(array('action' => 'index'));
-	}
-
 	/**
 	 * notification emails
 	 */
@@ -401,75 +276,5 @@ class PaymentController extends PaymentAppController {
 			->viewVars($viewVars)
 			->attachments($attachments);
 		$Email->send();
-	}
-
-	private function get_receipt_data($payment) {
-		$currency = $payment['Payment']['currency'];
-		$amount   = $payment['Payment']['amountcents'] / 100;
-		$prices   = Configure::read('csas.prices');
-		$price    = sprintf($prices[$currency]['format'], $amount);
-		$logo     = '/images/logo.png';
-		App::import('Vendor', array('file' => 'autoload'));
-		$start    = new \Moment\Moment($payment['Booking']['start'], 'Europe/London');
-		$end      = new \Moment\Moment($payment['Booking']['end'],   'Europe/London');
-
-		// adjust timezone
-		$tz_def = array(
-			'en' => array(
-				'America/New_York' => 'US Eastern Time',
-				'Europe/London' => 'Greenwich Mean Time',
-				'Europe/Prague' => 'Central European Time',
-			),
-			'cs' => array(
-				'America/New_York' => 'Východoamerický čas',
-				'Europe/London' => 'Greenwichský čas',
-				'Europe/Prague' => 'Středoevropský čas',
-			)
-		);
-		$tz = $payment['Booking']['Person']['timezone'];
-
-		// do not use Config.language as it is called by csas on the .cz domain only
-		// use the persons locale!
-		$locale = $payment['Booking']['Person']['locale'];
-		$locale_language = reset(explode('_', $locale));
-		$format_def = array(
-			'en_US' => 'D F d, Y \a\t H:i',
-			'en_GB' => 'D F d, Y \a\t H:i',
-			'cs_CZ' => 'D d. F Y \v\e H:i',
-			'en_CZ' => 'D F d, Y \a\t H:i',
-		);
-		$format = $format_def[$locale];
-		$tz_desc = $tz_def[$locale_language][$tz];
-
-		if ($locale == 'cs_CZ') {
-			\Moment\Moment::setLocale($locale);
-		}
-
-		$start->setTimezone($tz);
-		$end->setTimezone($tz);
-		$booking_time = $start->format($format) . ' - ' . $end->format('H:i');
-
-		// update birtdate format
-		$format_def = array(
-			'en_US' => 'D F d, Y',
-			'en_GB' => 'D F d, Y',
-			'cs_CZ' => 'D d. F Y',
-			'en_CZ' => 'D F d, Y',
-		);
-		$format = $format_def[$locale];
-		$birthdate = new \Moment\Moment($payment['Booking']['Person']['birth_date']);
-		$payment['Booking']['Person']['birth_date'] = $birthdate->format($format);
-		$birthdate = new \Moment\Moment($payment['Booking']['Partner']['birth_date']);
-		$payment['Booking']['Partner']['birth_date'] = $birthdate->format($format);
-
-		$data = array(
-			'payment' => $payment,
-			'bill_issued' => date('d/m/Y'),
-			'booked_time' => $booking_time,
-			'booked_tz' => $tz_desc,
-			'price' => $price,
-			'logo' => $logo,
-		);
-		return $data;
 	}
 }
