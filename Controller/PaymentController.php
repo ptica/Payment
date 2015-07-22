@@ -37,7 +37,8 @@ class PaymentController extends PaymentAppController {
 		// try to find existing Payment
 		$cnd = array(
 			'Payment.booking_id' => $booking_id,
-			'Payment.token' => $token
+			'Payment.token' => $token,
+			'Payment.status' => 'confirmed ok'
 		);
 
 		$payment = $this->Payment->find('first', array('conditions'=>$cnd));
