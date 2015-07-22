@@ -16,10 +16,6 @@ class PaymentController extends PaymentAppController {
 	 * payment via booking_id and token
 	 */
 	public function pay($booking_id, $token) {
-		// query string params
-		//$booking_id = $this->request->query('id');
-		//$token      = $this->request->query('token');
-		
 		// validate booking token versus id
 		$cnd = array(
 			'Booking.id'    => $booking_id,
@@ -32,6 +28,12 @@ class PaymentController extends PaymentAppController {
 			exit();
 		}
 		
+		// check for zero payment
+		if ($booking['Booking']['web_price'] <= 0) {
+			echo "Thank you, there is no balance to be paid for your registration.";
+			exit();
+		}
+		
 		// try to find existing Payment
 		$cnd = array(
 			'Payment.booking_id' => $booking_id,
@@ -41,8 +43,7 @@ class PaymentController extends PaymentAppController {
 		$payment = $this->Payment->find('first', array('conditions'=>$cnd));
 
 		if (@$payment['Payment']['status'] == 'confirmed ok') {
-			$this->Session->write('remembered_payment_id', $payment_id);
-			$this->redirect('/payment/ok');
+			$this->redirect('/pay/ok/' . $token);
 		} else {
 			// create new payment for gateway
 			$payment = array(
@@ -76,18 +77,9 @@ class PaymentController extends PaymentAppController {
 				
 				$params['DIGEST'] = $digest;
 				
-				/* TRY: sign using https://github.com/sebik/webpay-php */
-				$request = new WebPayRequest();
-				$request->setPrivateKey($private_key, Configure::read('gp.password'));
-				$request->setWebPayUrl('https://test.3dsecure.gpwebpay.com/rb/order.do');
-				$request->setResponseUrl(Router::url('/pay/result', $full=true));
-				$request->setMerchantNumber(Configure::read('gp.merchantid'));
-				$request->setOrderInfo(49 /* webpay objednávka */, 49 /* interní objednávka */, 1 /* cena v CZK */);
-				$gp_url = $request->requestUrl();
-
 				// for view
-				$this->set('locations', $this->Booking->Room->Location->find('list'));
-				$this->set(compact('booking', 'payment_id', 'booking_id', 'params', 'gp_url'));
+				$this->set(compact('booking', 'payment_id', 'booking_id', 'params'));
+				
 				$this->request->data = $booking;
 				$rooms = $this->Booking->Room->find('list');
 				$priceTypes = $this->Booking->PriceType->find('list');
@@ -97,11 +89,8 @@ class PaymentController extends PaymentAppController {
 				$locations = $this->Booking->Room->Location->find('list');
 				$location_desc = $this->Booking->Room->Location->find('list', array('fields'=>array('id', 'desc')));
 				$this->set(compact('rooms', 'priceTypes', 'upsells', 'meals', 'queries', 'locations', 'location_desc'));
-
-				// for nok page try again link
-				$this->Session->write('remembered_payment_id', $payment_id);
 			} else {
-				echo 'Internal error creating new payment. Please contact system administrator at jan.ptacek@gmail.com';
+				echo 'Internal error while creating new payment. Please contact system administrator at jan.ptacek@gmail.com';
 				exit();
 			}
 		}
@@ -153,10 +142,7 @@ class PaymentController extends PaymentAppController {
 			// saving payment with PRCODE & SRCODE
 			if ($pr_code == 0 && $sr_code == 0) {
 				$status = 'confirmed ok';
-				// send out emails
-				$this->send_new_booking($payment_id);
 			} else {
-				// TODO: redirect to nok page
 				$status = "PRCODE:$pr_code SRCODE:$sr_code";
 				echo "Payment gateway error message: " . $msg;
 			}
@@ -171,12 +157,12 @@ class PaymentController extends PaymentAppController {
 				CakeLog::write('info', "problem saving the Payment");
 			}
 			
-			// View for user
+			// Display response to user
 			if ($pr_code == 0 && $sr_code == 0) {
-				// send out emails
-				// TODO $this->send_new_booking($payment_id);
+				// $this->send_new_payment($payment_id);
+				$this->redirect('/pay/ok/' . $payment['Payment']['token']);
 			} else {
-				// TODO: redirect to nok page
+				$this->redirect('/pay/nok/' . $payment['Payment']['token']);
 			}
 		} else {
 			CakeLog::write('info', "payment result called: [WRONG_DIGEST]");
@@ -188,60 +174,43 @@ class PaymentController extends PaymentAppController {
 	/*
 	 * Payment Not Successful with link to repeated payment
 	 */
-	public function nok() {
-		// respect site of origin returned in 'merchantvar1'
-		$this->domain_correction();
+	public function nok($token) {
+		// validate booking token
+		$cnd = array(
+			'Booking.token' => $token
+		);
 
-		// empty but styled
-		$this->layout = 'empty';
-		$this->render(Configure::read('Config.language').'/nok');
+		$booking = $this->Booking->find('first', array('conditions'=>$cnd));
+		if (!$booking) {
+			echo 'Payment not found.';
+			exit();
+		}
+		
+		$this->set('booking_id', $booking['Booking']['id']);
+		$this->set('token', $booking['Booking']['token']);
 	}
 
 
 	/*
-	 * Payment Sucessful with Receipt
+	 * Payment Sucessful
 	 */
-	public function ok() {
-		// respect site of origin returned in 'merchantvar1'
-		$this->domain_correction();
+	public function ok($token) {
+		// validate booking token
+		$cnd = array(
+			'Booking.token' => $token
+		);
 
-		if ($this->request->query('token')) {
-			// email links have Ref & token
-			// query string params
-			$payment_id = $this->request->query('Ref');
-			$token      = $this->request->query('token');
-			$cnd = array(
-				'Payment.id' => $payment_id,
-				'token' => $token
-			);
-		} else if ($this->Session->check('remembered_payment_id')) {
-			// this covers the return from the payment gate
-			// as we've set the cookie
-			$payment_id = $this->Session->read('remembered_payment_id');
-			$cnd = array(
-				'Payment.id' => $payment_id,
-			);
-		} else {
-			$cnd = array('Payment.id' => null);
-		}
-
-		$this->Payment->recursive = 2; // include Partner & Person
-		$payment = $this->Payment->find('first', array('conditions'=>$cnd));
-
-		if (!$payment) {
+		$booking = $this->Booking->find('first', array('conditions'=>$cnd));
+		if (!$booking) {
 			echo 'Payment not found.';
 			exit();
 		}
-
-		$view_vars = $this->get_receipt_data($payment);
-		$this->set($view_vars);
-		$this->render(Configure::read('Config.language').'/ok');
 	}
 
 	/**
 	 * notification emails
 	 */
-	private function send_new_booking($payment_id) {
+	private function send_new_payment($payment_id) {
 		$this->Payment->recursive = 2;
 		$payment = $this->Payment->findById($payment_id);
 
@@ -261,22 +230,11 @@ class PaymentController extends PaymentAppController {
 			)
 		);
 
-		$subject = 'Your les-onze.com receipt';
+		$subject = 'Your receipt';
 		$to = $payment['Booking']['email'];
 
 		$Email = new CakeEmail('mandrill');
 		$Email->template('client_booking', $layout='mailchimp')
-			->to($to)
-			->subject($subject)
-			->viewVars($viewVars)
-			->attachments($attachments);
-		$Email->send();
-
-		/* send admin notification as well */
-		$subject = 'A new booking has been paid for';
-		$to = preg_split('/[ ,]+/', Configure::read('Cfg.notification.emails'), $limit=null, $flags=PREG_SPLIT_NO_EMPTY);
-		$Email = new CakeEmail('mandrill');
-		$Email->template('admin_booking', $layout='mailchimp')
 			->to($to)
 			->subject($subject)
 			->viewVars($viewVars)
