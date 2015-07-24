@@ -121,7 +121,7 @@
 	</div><!-- end row -->
 	
 	
-	<form id="payment_post" name="MERCHANTFORM" method="post" action="https://test.3dsecure.gpwebpay.com/kb/order.do">
+	<form id="payment_post" name="MERCHANTFORM" method="post" action="<?php echo Configure::read('gp.gateway_url'); ?>">
 		<?php
 			foreach ($params as $key => $value) {
 				echo "<input type=\"hidden\" name=\"$key\" value=\"$value\" />\n";
