@@ -10,8 +10,11 @@
 						<p class="form-control-static">
 							Please review your registration details.<br>
 							You may edit some of the details (not affecting price)
-							<a href="<?php echo Router::url('/edit/'.$this->request->params['pass'][1]);?>">here</a>.<br>
+							<a href="<?php echo Router::url('/edit/'.$this->request->params['pass'][1]);?>"><b>here</b></a>.<br>
 							Once everything is ok please proceed to the payment.
+						</p>
+						<p class="form-control-static">
+							To confirm your booking, you need to make the payment <b style="color:#000">before July 31</b>.	
 						</p>
 					</div>
 				</div>
@@ -114,11 +117,36 @@
 					<label for="UpsellUpsell" class="col-sm-2 control-label">Total price</label>
 					<div class="col-sm-7 input-group totalPrice"><span class="glyphicon glyphicon-tag"></span>&nbsp;&nbsp;<?php echo $params['AMOUNT'] / 100; ?> CZK</div>
 				</div>
+		
+				<div class="form-group" style="margin-top:15px; color: gray;">
+                                        <label for="QueryQuery" class="col-sm-2 control-label"></label>
+                                        <div class="col-sm-8 input-group">
+                                                <!--p class="form-control-static">
+							If you need to modify paid parts of the registration or cancel your booking altogether, please contact Anna Kotesovcova (<a href="mailto:kotesovcova@ufal.mff.cuni.cz">kotesovcova@ufal.mff.cuni.cz</a>).
+							Note that cancellation fees apply:
+							<ul>
+								<li>bank fee (2 % of the price applies always),</li>
+								<li>accommodation (up to 100 % if cancelled too late; depends on the accommodation),</li>
+								<li>lunches (no cancellation fee if cancelled before August 31).</li>
+							</ul>
+                                                </p-->
+                                                <p class="form-control-static">
+							If you need to modify paid parts of the registration or cancel your booking altogether, please contact Anna Kotesovcova (<a href="mailto:kotesovcova@ufal.mff.cuni.cz">kotesovcova@ufal.mff.cuni.cz</a>).<br>
+							Cancellation policy:
+							<ul>
+							    <li>75% of the accommodation fee will be charged when cancelled till July 31;
+							    <li>100% of accommodation fee after July 31.
+							    <li>75% of lunches fee when cancelled after August 31.
+							</ul>
+						</p>
+                                        </div>
+                                </div>
 				
 			</form>
 
 		</div><!-- end col md 12 -->
 	</div><!-- end row -->
+
 	
 	
 	<form id="payment_post" name="MERCHANTFORM" method="post" action="<?php echo Configure::read('gp.gateway_url'); ?>">
