@@ -1,5 +1,5 @@
 <div>
-	<h1>MTM 2015 Registration Payment</h1>
+	<h1>MTM 2016 Registration Payment</h1>
 	
 	<div class="row" style="margin-top: 45px;">
 		<div class="col-md-9">
@@ -14,7 +14,9 @@
 							Once everything is ok please proceed to the payment.
 						</p>
 						<p class="form-control-static">
-							To confirm your booking, you need to make the payment <b style="color:#000">before July 31</b>.	
+							To confirm your booking of the paid items, the payment has to be made <b style="color:#000">before Aug 20</b>.
+							An e-mail has been sent to you with a link back to this page in case you cannot make the payment now.
+							Note that the accommodation is very likely to be sold out, though.
 						</p>
 					</div>
 				</div>

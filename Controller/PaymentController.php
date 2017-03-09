@@ -27,10 +27,15 @@ class PaymentController extends PaymentAppController {
 			echo 'Payment not found.';
 			exit();
 		}
+
+		if (true) {
+			echo "<p>Thank you for registering for MT Marathon 2016.<p>Online payments period has already ended.<p>We are looking forward to seeing you here in Prague.";
+			exit();
+		}
 		
 		// check for zero payment
 		if ($booking['Booking']['web_price'] <= 0) {
-			echo "Thank you, there is no balance to be paid for your registration.";
+			echo "<p>Thank you for registering for MT Marathon 2016.<p>There is no balance to be paid for your registration.<p>Looking forward to seeing you in Prague.";
 			exit();
 		}
 		
